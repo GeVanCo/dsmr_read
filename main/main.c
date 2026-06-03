@@ -1,25 +1,32 @@
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/gpio.h"
+#include "dsmr_uart.h"
+#include "dsmr_parser.h"
+#include "wifi_manager.h"
+#include "gvc_mqtt_client.h"
+#include "dsmr_task.h"
+#include "led_status.h"
 #include "esp_log.h"
 
-#define BLINK_GPIO 8  // GPIO8 of ESP32-C3 SuperMini is connected to built-in LED
+static const char *TAG = "app";
 
 void app_main(void)
 {
-    // Configure GPIO8 as output
-    gpio_reset_pin(BLINK_GPIO);
-    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+    ESP_LOGI(TAG, "Starting DSMR Reader...");
 
-    while (1) {
-        ESP_LOGI("BLINK", "Turning GPIO8 ON");
-        gpio_set_level(BLINK_GPIO, 1);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    led_status_init();
+    led_status_start();
 
-        ESP_LOGI("BLINK", "Turning GPIO8 OFF");
-        gpio_set_level(BLINK_GPIO, 0);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
+    wifi_manager_init();
+    mqtt_client_init();
+    dsmr_uart_init();
+
+    dsmr_task_start();
+
+    // while (true) {
+    //     char *telegram = dsmr_uart_read_telegram();
+    //     if (telegram) {
+    //         dsmr_data_t data = dsmr_parse(telegram);
+    //         mqtt_publish_dsmr(&data);
+    //         free(telegram);
+    //     }
+    // }
 }
-
