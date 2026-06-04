@@ -1,76 +1,159 @@
 #include "dsmr_uart.h"
-
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <stdlib.h>
 
-#define DSMR_UART_NUM      UART_NUM_1
-#define DSMR_UART_RX_PIN   4
-#define DSMR_UART_TX_PIN   5   // unused but required
-#define DSMR_BUF_SIZE      2048
-
 static const char *TAG = "dsmr_uart";
-static TaskHandle_t dsmr_task_handle = NULL;
 
-void dsmr_uart_set_task_handle(TaskHandle_t handle)
+#define DSMR_UART_NUM      UART_NUM_1
+#define DSMR_UART_TX_GPIO  21      // not used for P1, but must be valid
+#define DSMR_UART_RX_GPIO  20      // adjust to your P1 RX pin
+#define DSMR_BAUD_RATE     115200  // your meter’s baud (often 115200 or 9600)
+
+#define DSMR_RX_BUF_SIZE   1024    // UART driver buffer
+#define DSMR_TLG_BUF_SIZE  2048    // internal telegram buffer
+#define DSMR_QUEUE_LEN     4       // number of telegrams that can be queued
+
+static QueueHandle_t s_uart_event_queue = NULL;
+static QueueHandle_t s_telegram_queue   = NULL;
+
+static char   s_tlg_buf[DSMR_TLG_BUF_SIZE];
+static size_t s_tlg_len = 0;
+
+QueueHandle_t dsmr_uart_get_queue(void)
 {
-    dsmr_task_handle = handle;
+    return s_telegram_queue;
+}
+
+static void handle_full_telegram(const char *buf, size_t len)
+{
+    char *telegram = malloc(len + 1);
+    if (!telegram) {
+        ESP_LOGE(TAG, "Failed to allocate memory for telegram");
+        return;
+    }
+
+    memcpy(telegram, buf, len);
+    telegram[len] = '\0';
+
+    if (s_telegram_queue) {
+        if (xQueueSend(s_telegram_queue, &telegram, 0) != pdPASS) {
+            ESP_LOGW(TAG, "Telegram queue full, dropping telegram");
+            free(telegram);
+        } else {
+            ESP_LOGI(TAG, "Queued DSMR telegram (%d bytes)", (int)len);
+        }
+    } else {
+        free(telegram);
+    }
+}
+
+static void process_incoming_bytes(const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        char c = (char)data[i];
+
+        if (s_tlg_len < DSMR_TLG_BUF_SIZE - 1) {
+            s_tlg_buf[s_tlg_len++] = c;
+        } else {
+            ESP_LOGW(TAG, "Telegram buffer overflow, resetting");
+            s_tlg_len = 0;
+            continue;
+        }
+
+        if (c == '!') {
+            // naive: assume '!' marks end of telegram; include rest of line
+            // you can extend this to also capture CRC line if needed
+            // wait until newline after '!' to finalize
+        }
+
+        if (c == '\n' && s_tlg_len > 0) {
+            // check if previous char was '!' → end of telegram line
+            if (s_tlg_len >= 2 && s_tlg_buf[s_tlg_len - 2] == '!') {
+                handle_full_telegram(s_tlg_buf, s_tlg_len);
+                s_tlg_len = 0;
+            }
+        }
+    }
+}
+
+static void uart_event_task(void *pvParameters)
+{
+    uart_event_t event;
+    uint8_t data[256];
+
+    ESP_LOGI(TAG, "UART event task started");
+
+    while (1) {
+        if (xQueueReceive(s_uart_event_queue, &event, portMAX_DELAY)) {
+            switch (event.type) {
+
+                case UART_DATA: {
+                    int len = uart_read_bytes(DSMR_UART_NUM, data,
+                                              event.size < sizeof(data) ? event.size : sizeof(data),
+                                              0);
+                    if (len > 0) {
+                        process_incoming_bytes(data, len);
+                    }
+                    break;
+                }
+
+                case UART_FIFO_OVF:
+                case UART_BUFFER_FULL:
+                    ESP_LOGW(TAG, "UART overflow, flushing");
+                    uart_flush_input(DSMR_UART_NUM);
+                    xQueueReset(s_uart_event_queue);
+                    s_tlg_len = 0;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
 }
 
 void dsmr_uart_init(void)
 {
     uart_config_t cfg = {
-        .baud_rate = 115200,
+        .baud_rate = DSMR_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
         .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT
+        .source_clk = UART_SCLK_APB,
     };
 
-    ESP_ERROR_CHECK(uart_driver_install(DSMR_UART_NUM, DSMR_BUF_SIZE, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(DSMR_UART_NUM, &cfg));
-    ESP_ERROR_CHECK(uart_set_pin(DSMR_UART_NUM, DSMR_UART_TX_PIN, DSMR_UART_RX_PIN,
-                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-    // DSMR P1 uses inverted RX
-    ESP_ERROR_CHECK(uart_set_line_inverse(DSMR_UART_NUM, UART_SIGNAL_RXD_INV));
+    ESP_ERROR_CHECK(uart_set_pin(DSMR_UART_NUM,
+                                    DSMR_UART_TX_GPIO,
+                                    DSMR_UART_RX_GPIO,
+                                    UART_PIN_NO_CHANGE,
+                                    UART_PIN_NO_CHANGE));
+    
+    ESP_ERROR_CHECK(uart_driver_install(DSMR_UART_NUM,
+                                        DSMR_RX_BUF_SIZE,
+                                        DSMR_RX_BUF_SIZE,
+                                        20,
+                                        &s_uart_event_queue,
+                                        0));
 
-    ESP_LOGI(TAG, "DSMR UART initialized on GPIO%d (RX), inverted", DSMR_UART_RX_PIN);
-}
-
-char *dsmr_uart_read_telegram(void)
-{
-    uint8_t buf[DSMR_BUF_SIZE];
-    int len = uart_read_bytes(DSMR_UART_NUM, buf, sizeof(buf) - 1, pdMS_TO_TICKS(2000));
-
-    if (len <= 0) {
-        return NULL; // no data
+    s_telegram_queue = xQueueCreate(DSMR_QUEUE_LEN, sizeof(char *));
+    if (!s_telegram_queue) {
+        ESP_LOGE(TAG, "Failed to create telegram queue");
     }
 
-    buf[len] = '\0';
+    xTaskCreate(uart_event_task,
+                "uart_event_task",
+                4096,
+                NULL,
+                6,
+                NULL);
 
-    // DSMR telegrams start with '/' and end with '!'
-    char *start = strchr((char *)buf, '/');
-    char *end   = strrchr((char *)buf, '!');
+    s_tlg_len = 0; // tlg: telegram
 
-    if (!start || !end || end <= start) {
-        ESP_LOGW(TAG, "Invalid DSMR telegram received");
-        return NULL;
-    }
-
-    // include '!' and newline
-    end += 1;
-
-    size_t telegram_len = end - start;
-    char *telegram = malloc(telegram_len + 1);
-    if (!telegram) return NULL;
-
-    memcpy(telegram, start, telegram_len);
-    telegram[telegram_len] = '\0';
-
-    ESP_LOGI(TAG, "Received DSMR telegram (%d bytes)", telegram_len);
-    return telegram;
+    ESP_LOGI(TAG, "DSMR UART initialized");
 }
-

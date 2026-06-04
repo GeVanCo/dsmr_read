@@ -11,37 +11,32 @@
 
 static const char *TAG = "dsmr_task";
 
-#define DSMR_TASK_STACK   4096
-#define DSMR_TASK_PRIO    5
-#define DSMR_INTERVAL_SEC 10
+#define DSMR_TASK_STACK 4096
+#define DSMR_TASK_PRIO  5
 
 static void dsmr_task(void *arg)
 {
     ESP_LOGI(TAG, "DSMR task started");
 
-    while (1) 
-    {
+    QueueHandle_t q = dsmr_uart_get_queue();
+    if (!q) {
+        ESP_LOGE(TAG, "DSMR telegram queue not initialized");
+        vTaskDelete(NULL);
+    }
 
-        char *telegram = dsmr_uart_read_telegram();
+    while (1) {
+        char *telegram = NULL;
 
-        if (telegram) 
-        {
-            ESP_LOGI(TAG, "Received DSMR telegram");
-            led_status_set(LED_STATUS_ALL_OK);
-
-            dsmr_data_t data = dsmr_parse(telegram);
-
-            mqtt_publish_dsmr(&data);
-
-            free(telegram);
-        } 
-        else 
-        {
-            ESP_LOGW(TAG, "No valid DSMR telegram received");
-            led_status_set(LED_STATUS_DSMR_ERROR);
+        if (xQueueReceive(q, &telegram, portMAX_DELAY) == pdTRUE) {
+            if (telegram) {
+                dsmr_data_t data = dsmr_parse(telegram);
+                mqtt_publish_dsmr(&data);
+                free(telegram);
+                led_status_set(LED_STATUS_ALL_OK);
+            } else {
+                led_status_set(LED_STATUS_DSMR_ERROR);
+            }
         }
-
-        vTaskDelay(pdMS_TO_TICKS(DSMR_INTERVAL_SEC * 1000));
     }
 }
 
@@ -54,3 +49,4 @@ void dsmr_task_start(void)
                 DSMR_TASK_PRIO,
                 NULL);
 }
+
