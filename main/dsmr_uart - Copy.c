@@ -4,14 +4,17 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdlib.h>
-#include <ctype.h> // isxdigit()
 
 static const char *TAG = "dsmr_uart";
 
-// UART1 on GPIO4 (RX), TX unused
+// Select which UART to use:
+// - UART_NUM_0: simulator via USB-CDC (no GPIO pins)
+// - UART_NUM_1: real P1 port via GPIO
 #define DSMR_UART_NUM      UART_NUM_1
+
+// Only used when DSMR_UART_NUM != UART_NUM_0
 #define DSMR_UART_TX_GPIO  UART_PIN_NO_CHANGE
-#define DSMR_UART_RX_GPIO  4
+#define DSMR_UART_RX_GPIO  4      // your P1 RX pin when using UART1
 
 #define DSMR_BAUD_RATE     115200
 
@@ -32,29 +35,48 @@ QueueHandle_t dsmr_uart_get_queue(void)
 
 static void handle_full_telegram(const char *buf, size_t len)
 {
+    ESP_LOGI(TAG, "handle_full_telegram: len=%d", (int)len);
+
     char *telegram = malloc(len + 1);
     if (!telegram) {
         ESP_LOGE(TAG, "Failed to allocate memory for telegram");
         return;
     }
+    ESP_LOGI(TAG, "TELEGRAM CONTENT:\n%s", telegram);
 
     memcpy(telegram, buf, len);
     telegram[len] = '\0';
 
-    if (xQueueSend(s_telegram_queue, &telegram, 0) != pdPASS) {
-        ESP_LOGW(TAG, "Telegram queue full, dropping telegram");
-        free(telegram);
+    if (s_telegram_queue) {
+        if (xQueueSend(s_telegram_queue, &telegram, 0) != pdPASS) {
+            ESP_LOGW(TAG, "Telegram queue full, dropping telegram");
+            free(telegram);
+        } else {
+            ESP_LOGI(TAG, "Queued DSMR telegram (%d bytes)", (int)len);
+        }
     } else {
-        ESP_LOGI(TAG, "Queued DSMR telegram (%d bytes)", (int)len);
+        free(telegram);
     }
 }
 
 static void process_incoming_bytes(const uint8_t *data, size_t len)
 {
-    for (size_t i = 0; i < len; i++) {
-        char c = (char)data[i];
+    ESP_LOGI(TAG, "process_incoming_bytes: len=%d", (int)len);
 
-        // Append to buffer
+    for (size_t i = 0; i < len; i++) {
+        ESP_LOGI(TAG, "  byte[%d] = 0x%02X ('%c')",
+                (int)i,
+                data[i],
+                (data[i] >= 32 && data[i] <= 126) ? data[i] : '.');
+
+        char c = (char)data[i];
+        if (c == '\n') {
+            ESP_LOGI(TAG, "  NEWLINE detected, s_tlg_len=%d", (int)s_tlg_len);
+        }  
+        if (c == '!') {
+            ESP_LOGI(TAG, "  EXCLAMATION MARK detected at pos %d", (int)s_tlg_len);
+        }      
+
         if (s_tlg_len < DSMR_TLG_BUF_SIZE - 1) {
             s_tlg_buf[s_tlg_len++] = c;
         } else {
@@ -63,42 +85,44 @@ static void process_incoming_bytes(const uint8_t *data, size_t len)
             continue;
         }
 
-        // Detect end of telegram on newline
-        if (c == '\n') {
+        if (c == '\n' && s_tlg_len > 0) {
+            // Handle both "!\n" and "!\r\n"
+            size_t pos = s_tlg_len;
 
-            // Find last '!' in buffer
-            char *excl = strrchr(s_tlg_buf, '!');
-            if (excl) {
-                size_t pos = excl - s_tlg_buf;  // index of '!'
+            // Skip trailing '\r' if present
+            if (pos >= 2 && s_tlg_buf[pos - 2] == '\r') {
+                pos--;
+            }
 
-                // Ensure 4 chars after '!'
-                if (pos + 4 < s_tlg_len) {
-
-                    // Validate 4 hex chars
-                    bool hex_ok = true;
-                    for (int j = 1; j <= 4; j++) {
-                        // char h = s_tlg_buf[pos + j];
-                        // if (!((h >= '0' && h <= '9') ||
-                        //       (h >= 'A' && h <= 'F'))) {
-                        //     hex_ok = false;
-                        //     break;
-                        // }
-                        if (!isxdigit((unsigned char)s_tlg_buf[pos + j])) {
-                            hex_ok = false;
-                            break;
-                        }
-                    }
-
-                    if (hex_ok) {
-                        handle_full_telegram(s_tlg_buf, s_tlg_len);
-                        s_tlg_len = 0;
-                        continue;
-                    }
-                }
+            if (pos >= 2 && s_tlg_buf[pos - 2] == '!') {
+                handle_full_telegram(s_tlg_buf, s_tlg_len);
+                s_tlg_len = 0;
             }
         }
     }
 }
+
+// static void process_incoming_bytes(const uint8_t *data, size_t len)
+// {
+//     for (size_t i = 0; i < len; i++) {
+//         char c = (char)data[i];
+
+//         if (s_tlg_len < DSMR_TLG_BUF_SIZE - 1) {
+//             s_tlg_buf[s_tlg_len++] = c;
+//         } else {
+//             ESP_LOGW(TAG, "Telegram buffer overflow, resetting");
+//             s_tlg_len = 0;
+//             continue;
+//         }
+
+//         if (c == '\n' && s_tlg_len > 0) {
+//             if (s_tlg_len >= 2 && s_tlg_buf[s_tlg_len - 2] == '!') {
+//                 handle_full_telegram(s_tlg_buf, s_tlg_len);
+//                 s_tlg_len = 0;
+//             }
+//         }
+//     }
+// }
 
 static void uart_event_task(void *pvParameters)
 {
@@ -112,11 +136,27 @@ static void uart_event_task(void *pvParameters)
             switch (event.type) {
 
                 case UART_DATA: {
+                    ESP_LOGE(TAG, "------------------------------------------------------");
                     int len = uart_read_bytes(DSMR_UART_NUM,
                                               data,
                                               event.size < sizeof(data) ? event.size : sizeof(data),
                                               0);
                     if (len > 0) {
+                        // 🔍 DEBUG: print raw bytes (HEX)
+                        printf("UART_DATA (%d bytes): HEX: ", len);
+                        for (int i = 0; i < len; i++) {
+                            printf("%02X ", data[i]);
+                        }
+                        printf("\n");
+
+                        // 🔍 DEBUG: print raw bytes (ASCII best effort)
+                        printf("UART_DATA ASCII: ");
+                        for (int i = 0; i < len; i++) {
+                            char c = (data[i] >= 32 && data[i] <= 126) ? data[i] : '.';
+                            printf("%c", c);
+                        }
+                        printf("\n");
+
                         process_incoming_bytes(data, len);
                     }
                     break;
@@ -151,10 +191,10 @@ void dsmr_uart_init(void)
     ESP_ERROR_CHECK(uart_param_config(DSMR_UART_NUM, &cfg));
 
     ESP_ERROR_CHECK(uart_set_pin(DSMR_UART_NUM,
-                                 DSMR_UART_TX_GPIO,
-                                 DSMR_UART_RX_GPIO,
-                                 UART_PIN_NO_CHANGE,
-                                 UART_PIN_NO_CHANGE));
+                                    DSMR_UART_TX_GPIO,
+                                    DSMR_UART_RX_GPIO,
+                                    UART_PIN_NO_CHANGE,
+                                    UART_PIN_NO_CHANGE));
 
     ESP_ERROR_CHECK(uart_driver_install(DSMR_UART_NUM,
                                         DSMR_RX_BUF_SIZE,
@@ -177,6 +217,5 @@ void dsmr_uart_init(void)
 
     s_tlg_len = 0;
 
-    ESP_LOGI(TAG, "DSMR UART initialized on UART%d (RX GPIO%d)",
-             DSMR_UART_NUM, DSMR_UART_RX_GPIO);
+    ESP_LOGI(TAG, "DSMR UART initialized on UART%d", DSMR_UART_NUM);
 }
