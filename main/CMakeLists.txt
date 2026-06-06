@@ -5,7 +5,6 @@ idf_component_register(
         "dsmr_parser.c"
         "wifi_manager.c"
         "gvc_mqtt_client.c"
-        "test.c"
         "dsmr_task.c"
         "led_status.c"
     INCLUDE_DIRS "."
