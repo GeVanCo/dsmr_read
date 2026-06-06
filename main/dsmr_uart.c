@@ -1,7 +1,11 @@
 #include "dsmr_uart.h"
+
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "freertos/task.h"
+#include "led_status.h"
+#include "crc_x25.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h> // isxdigit()
@@ -32,6 +36,42 @@ QueueHandle_t dsmr_uart_get_queue(void)
 
 static void handle_full_telegram(const char *buf, size_t len)
 {
+    // Find '!' again (safe because telegram is complete)
+    char *excl = strrchr(buf, '!');
+    if (!excl) {
+        ESP_LOGW(TAG, "Telegram missing '!'");
+        led_status_set(LED_STATUS_DSMR_ERROR);
+        return;
+    }
+
+    size_t pos = excl - buf;
+
+    // Extract transmitted CRC (4 hex chars)
+    if (pos + 4 >= len) {
+        ESP_LOGW(TAG, "Telegram too short for CRC");
+        led_status_set(LED_STATUS_DSMR_ERROR);
+        return;
+    }
+
+    char crc_str[5];
+    memcpy(crc_str, &buf[pos + 1], 4);
+    crc_str[4] = '\0';
+
+    uint16_t crc_rx = (uint16_t)strtol(crc_str, NULL, 16);
+
+    // Compute CRC over everything BEFORE '!'
+    uint16_t crc_calc = crc_x25((const uint8_t *)buf, pos);
+
+    if (crc_rx != crc_calc) {
+        ESP_LOGW(TAG, "CRC mismatch: rx=%04X calc=%04X", crc_rx, crc_calc);
+        led_status_set(LED_STATUS_DSMR_ERROR);
+        return;
+    }
+
+    // CRC OK → restore normal LED state
+    led_status_set(LED_STATUS_ALL_OK);
+
+    // Allocate and queue telegram    
     char *telegram = malloc(len + 1);
     if (!telegram) {
         ESP_LOGE(TAG, "Failed to allocate memory for telegram");
