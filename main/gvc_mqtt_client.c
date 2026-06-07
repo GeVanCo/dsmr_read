@@ -13,6 +13,13 @@ static esp_mqtt_client_handle_t client = NULL;
 #define MQTT_URI      "mqtt://192.168.1.43"   // change to your broker
 #define MQTT_TOPIC    "home/dsmr/data"
 
+// ---------------------------------------------------------------------------
+// Payload buffer size for MQTT JSON messages.
+// 1024 bytes gives plenty of headroom for future expansion (extra OBIS values,
+// multi-phase data, timestamps, metadata, etc.) without risking truncation.
+// ---------------------------------------------------------------------------
+#define MQTT_PAYLOAD_BUFFER_SIZE 1024
+
 static void mqtt_event_handler(void *handler_args,
                                esp_event_base_t base,
                                int32_t event_id,
@@ -21,7 +28,7 @@ static void mqtt_event_handler(void *handler_args,
     switch (event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT connected");
-            led_status_set(LED_STATUS_HEARTBEAT);
+            led_status_set(LED_STATUS_ALL_OK);
             break;
 
         case MQTT_EVENT_DISCONNECTED:
@@ -68,19 +75,47 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
         return;
     }
 
-    char payload[256];
-    snprintf(payload, sizeof(payload),
-             "{"
-             "\"import\":%.3f,"
-             "\"export\":%.3f,"
-             "\"voltage\":%.1f,"
-             "\"current\":%.1f"
-             "}",
-             data->power_import,
-             data->power_export,
-             data->voltage_l1,
-             data->current_l1);
+    char payload[MQTT_PAYLOAD_BUFFER_SIZE];
+    int len = snprintf(
+        payload, 
+        sizeof(payload),
+        "{"
+        "\"import\":%.3f,"
+        "\"export\":%.3f,"
+        "\"voltage\":%.1f,"
+        "\"current\":%.1f"
+        "}",
+        data->power_import,
+        data->power_export,
+        data->voltage_l1,
+        data->current_l1
+    );
 
+    // ----------------------------------------------------------------------
+    // Detect truncation (snprintf returns the number of chars that *would*
+    // have been written). If too large, publish an error JSON instead.
+    // ----------------------------------------------------------------------
+    if (len >= sizeof(payload)) {
+        ESP_LOGE(TAG,
+                 "MQTT payload truncated! ([%d] bytes needed, max allowed: [%d])",
+                 len, 
+                 MQTT_PAYLOAD_BUFFER_SIZE
+                );
+
+        // Build a small JSON error message
+        snprintf(
+            payload, 
+            sizeof(payload),
+            "{"
+            "\"error\":\"payload_too_large\","
+            "\"required\":%d,"
+            "\"max\":%d"
+            "}",
+            len, 
+            MQTT_PAYLOAD_BUFFER_SIZE
+        );
+    }
+    
     int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC, payload, 0, 1, 0);
 
     if (msg_id >= 0) {

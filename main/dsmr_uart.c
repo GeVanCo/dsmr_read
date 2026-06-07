@@ -4,7 +4,7 @@
 #include "esp_log.h"
 #include "freertos/task.h"
 #include "led_status.h"
-#include "crc_x25.h"
+#include "dsmr_crc16.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -59,8 +59,8 @@ static void handle_full_telegram(const char *buf, size_t len)
 
     uint16_t crc_rx = (uint16_t)strtol(crc_str, NULL, 16);
 
-    // Compute CRC over everything BEFORE '!'
-    uint16_t crc_calc = crc_x25((const uint8_t *)buf, pos);
+    // pos = index of '!'
+    uint16_t crc_calc = dsmr_crc16((const uint8_t *)buf, pos + 1); // include '!' in CRC
 
     if (crc_rx != crc_calc) {
         ESP_LOGW(TAG, "CRC mismatch: rx=%04X calc=%04X", crc_rx, crc_calc);

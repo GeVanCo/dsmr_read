@@ -15,8 +15,8 @@ void app_main(void)
     led_status_init();
     led_status_start();
 
-    // wifi_manager_init();
-    // mqtt_client_init();
+    wifi_manager_init();
+    mqtt_client_init();
     dsmr_uart_init();
 
     dsmr_task_start();

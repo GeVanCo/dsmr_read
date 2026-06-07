@@ -25,7 +25,9 @@ static void wifi_event_handler(void *arg,
         esp_wifi_connect();
     } 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+
         if (s_retry_num < WIFI_MAX_RETRY) {
+            led_status_set(LED_STATUS_WIFI_RETRYING);
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGW(TAG, "retry to connect to the AP");
@@ -39,7 +41,8 @@ static void wifi_event_handler(void *arg,
         ESP_LOGI(TAG, "got ip: " IPSTR, IP2STR(&event->ip_info.ip));
         s_connected = true;
         s_retry_num = 0;
-        led_status_set(LED_STATUS_HEARTBEAT);
+
+        led_status_set(LED_STATUS_ALL_OK);
     }
 }
 
