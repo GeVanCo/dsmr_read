@@ -5,9 +5,9 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
-#include "led_status.h"
+#include "system_status.h"
 
-static const char *TAG = "wifi_manager";
+static const char *TAG = "gvc_wifi_manager";
 
 #define WIFI_SSID      "SisyPhus"
 #define WIFI_PASS      "Vision#Tpv"
@@ -22,18 +22,19 @@ static void wifi_event_handler(void *arg,
                                void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        system_status_set(SYSTEM_STATUS_WIFI, false);
         esp_wifi_connect();
     } 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 
         if (s_retry_num < WIFI_MAX_RETRY) {
-            led_status_set(LED_STATUS_WIFI_RETRYING);
+            system_status_set(SYSTEM_STATUS_WIFI, false);
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGW(TAG, "retry to connect to the AP");
         } else {
             ESP_LOGE(TAG, "connect to the AP fail");
-            led_status_set(LED_STATUS_WIFI_DISCONNECTED);
+            system_status_set(SYSTEM_STATUS_WIFI, false);
         }
     } 
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -42,7 +43,7 @@ static void wifi_event_handler(void *arg,
         s_connected = true;
         s_retry_num = 0;
 
-        led_status_set(LED_STATUS_ALL_OK);
+        system_status_set(SYSTEM_STATUS_WIFI, true);
     }
 }
 

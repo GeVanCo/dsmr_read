@@ -5,12 +5,13 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
-static const char *TAG = "led_status";
+static const char *TAG = "gvc_led_status";
 
 #define LED_GPIO 8   // adjust if needed
 
 static led_status_t current_led_status = LED_STATUS_HEARTBEAT;
 static SemaphoreHandle_t led_mutex;
+static bool led_ready = false;
 
 static void led_set(int level)
 {
@@ -128,11 +129,18 @@ void led_status_init(void)
     gpio_config(&cfg);
     led_set(0);
 
+    led_ready = true;
+
     ESP_LOGI(TAG, "LED initialized on GPIO%d", LED_GPIO);
 }
 
 void led_status_set(led_status_t status)
 {
+    if (!led_ready) {
+        ESP_LOGW(TAG, "LED not ready, ignoring status set");
+        return;
+    }
+    
     if (status != current_led_status)
     {
         ESP_LOGI(TAG, "LED status changed: was [%d] → is [%d]", current_led_status, status);

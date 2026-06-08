@@ -3,14 +3,14 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "freertos/task.h"
-#include "led_status.h"
+#include "system_status.h"
 #include "dsmr_crc16.h"
 
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h> // isxdigit()
 
-static const char *TAG = "dsmr_uart";
+static const char *TAG = "gvc_dsmr_uart";
 
 // UART1 on GPIO4 (RX), TX unused
 #define DSMR_UART_NUM      UART_NUM_1
@@ -40,7 +40,7 @@ static void handle_full_telegram(const char *buf, size_t len)
     char *excl = strrchr(buf, '!');
     if (!excl) {
         ESP_LOGW(TAG, "Telegram missing '!'");
-        led_status_set(LED_STATUS_DSMR_ERROR);
+        system_status_set(SYSTEM_STATUS_DSMR, false);
         return;
     }
 
@@ -49,7 +49,7 @@ static void handle_full_telegram(const char *buf, size_t len)
     // Extract transmitted CRC (4 hex chars)
     if (pos + 4 >= len) {
         ESP_LOGW(TAG, "Telegram too short for CRC");
-        led_status_set(LED_STATUS_DSMR_ERROR);
+        system_status_set(SYSTEM_STATUS_DSMR, false);
         return;
     }
 
@@ -64,12 +64,13 @@ static void handle_full_telegram(const char *buf, size_t len)
 
     if (crc_rx != crc_calc) {
         ESP_LOGW(TAG, "CRC mismatch: rx=%04X calc=%04X", crc_rx, crc_calc);
-        led_status_set(LED_STATUS_DSMR_ERROR);
+        system_status_set(SYSTEM_STATUS_DSMR, false);
         return;
     }
 
     // CRC OK → restore normal LED state
-    led_status_set(LED_STATUS_ALL_OK);
+    ESP_LOGI(TAG, "SYSTEM_STATUS_DSMR_OK");
+    system_status_set(SYSTEM_STATUS_DSMR, true);
 
     // Allocate and queue telegram    
     char *telegram = malloc(len + 1);
@@ -84,8 +85,8 @@ static void handle_full_telegram(const char *buf, size_t len)
     if (xQueueSend(s_telegram_queue, &telegram, 0) != pdPASS) {
         ESP_LOGW(TAG, "Telegram queue full, dropping telegram");
         free(telegram);
-    } else {
-        ESP_LOGI(TAG, "Queued DSMR telegram (%d bytes)", (int)len);
+    // } else {
+    //     ESP_LOGI(TAG, "Queued DSMR telegram (%d bytes)", (int)len);
     }
 }
 

@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-static const char *TAG = "dsmr_parser";
+static const char *TAG = "gvc_dsmr_parser";
 
 static float extract_float(const char *line)
 {

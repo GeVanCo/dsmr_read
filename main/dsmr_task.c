@@ -3,13 +3,12 @@
 #include "dsmr_uart.h"
 #include "dsmr_parser.h"
 #include "gvc_mqtt_client.h"
-#include "led_status.h"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "dsmr_task";
+static const char *TAG = "gvc_dsmr_task";
 
 #define DSMR_TASK_STACK 4096
 #define DSMR_TASK_PRIO  5
@@ -32,9 +31,6 @@ static void dsmr_task(void *arg)
                 dsmr_data_t data = dsmr_parse(telegram);
                 mqtt_publish_dsmr(&data);
                 free(telegram);
-                led_status_set(LED_STATUS_ALL_OK);
-            } else {
-                led_status_set(LED_STATUS_DSMR_ERROR);
             }
         }
     }
