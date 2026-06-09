@@ -93,30 +93,93 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     }
 
     char payload[MQTT_PAYLOAD_BUFFER_SIZE];
+    int offset = 0;
 
-    int len = snprintf(
-        payload, 
-        sizeof(payload),
-        "{"
-        "\"import\":%.3f,"
-        "\"export\":%.3f,"
-        "\"voltage\":%.1f,"
-        "\"current\":%.1f"
-        "}",
-        data->power_import,
-        data->power_export,
-        data->voltage_l1,
-        data->current_l1
-    );
+    offset += snprintf(payload + offset, sizeof(payload) - offset,
+                    "{"
+                    "\"import\":%.3f,"
+                    "\"export\":%.3f,",
+                    data->power_import,
+                    data->power_export);
+
+    // ------------------------------------------------------------
+    // Electricity: 1‑phase or 3‑phase
+    // ------------------------------------------------------------
+    if (data->features.isThreePhase) {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                        "\"voltage_l1\":%.1f,"
+                        "\"voltage_l2\":%.1f,"
+                        "\"voltage_l3\":%.1f,"
+                        "\"current_l1\":%.1f,"
+                        "\"current_l2\":%.1f,"
+                        "\"current_l3\":%.1f,",
+                        data->voltage_l1,
+                        data->voltage_l2,
+                        data->voltage_l3,
+                        data->current_l1,
+                        data->current_l2,
+                        data->current_l3);
+    } else {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                        "\"voltage_l1\":%.1f,"
+                        "\"current_l1\":%.1f,",
+                        data->voltage_l1,
+                        data->current_l1);
+    }
+
+    // ------------------------------------------------------------
+    // Gas
+    // ------------------------------------------------------------
+    if (data->features.hasGas) {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                        "\"gas_m3\":%.3f,",
+                        data->gas_m3);
+    }
+
+    // ------------------------------------------------------------
+    // Water
+    // ------------------------------------------------------------
+    if (data->features.hasWater) {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                        "\"water_m3\":%.3f,",
+                        data->water_m3);
+    }
+
+    // ------------------------------------------------------------
+    // Heat
+    // ------------------------------------------------------------
+    if (data->features.hasHeat) {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                        "\"heat_gj\":%.3f,",
+                        data->heat_gj);
+    }
+
+    // ------------------------------------------------------------
+    // Solar export
+    // ------------------------------------------------------------
+    if (data->features.hasSolar) {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                        "\"solar_export\":%.3f,",
+                        data->power_export);
+    }
+
+    // ------------------------------------------------------------
+    // Remove trailing comma and close JSON
+    // ------------------------------------------------------------
+    if (payload[offset - 1] == ',') {
+        offset--;  // remove last comma
+    }
+
+    snprintf(payload + offset, sizeof(payload) - offset, "}");
 
     // ----------------------------------------------------------------------
     // Detect truncation (snprintf returns the number of chars that *would*
     // have been written). If too large, publish an error JSON instead.
     // ----------------------------------------------------------------------
-    if (len >= sizeof(payload)) {
+    if (offset >= sizeof(payload)) {
         ESP_LOGE(TAG,
                  "MQTT payload truncated! ([%d] bytes needed, max allowed: [%d])",
-                 len, 
+                 offset, 
                  MQTT_PAYLOAD_BUFFER_SIZE
                 );
 
@@ -129,7 +192,7 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
             "\"required\":%d,"
             "\"max_allowed\":%d"
             "}",
-            len, 
+            offset, 
             MQTT_PAYLOAD_BUFFER_SIZE
         );
     }
