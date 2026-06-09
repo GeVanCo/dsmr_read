@@ -164,6 +164,15 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     }
 
     // ------------------------------------------------------------
+    // Capacity tariff (monthly peak kW) - optional, may not be present in all meters
+    // ------------------------------------------------------------
+    if (data->features.hasMonthlyPeak) {
+        offset += snprintf(payload + offset, sizeof(payload) - offset,
+                       "\"monthly_peak_kw\":%.3f,",
+                       data->monthly_peak_kw);
+    }
+
+    // ------------------------------------------------------------
     // Remove trailing comma and close JSON
     // ------------------------------------------------------------
     if (payload[offset - 1] == ',') {
