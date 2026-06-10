@@ -107,12 +107,12 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     // ------------------------------------------------------------
     if (data->features.isThreePhase) {
         offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"voltage_l1\":%.1f,"
-                        "\"voltage_l2\":%.1f,"
-                        "\"voltage_l3\":%.1f,"
-                        "\"current_l1\":%.1f,"
-                        "\"current_l2\":%.1f,"
-                        "\"current_l3\":%.1f,",
+                        "\"V_L1\":%.1f,"
+                        "\"V_L2\":%.1f,"
+                        "\"V_L3\":%.1f,"
+                        "\"I_L1\":%.1f,"
+                        "\"I_L2\":%.1f,"
+                        "\"I_L3\":%.1f,",
                         data->voltage_l1,
                         data->voltage_l2,
                         data->voltage_l3,
@@ -121,8 +121,8 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
                         data->current_l3);
     } else {
         offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"voltage_l1\":%.1f,"
-                        "\"current_l1\":%.1f,",
+                        "\"V_L1\":%.1f,"
+                        "\"I_L1\":%.1f,",
                         data->voltage_l1,
                         data->current_l1);
     }
@@ -159,7 +159,7 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     // ------------------------------------------------------------
     if (data->features.hasSolar) {
         offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"solar_export\":%.3f,",
+                        "\"solar\":%.3f,",
                         data->power_export);
     }
 
@@ -168,7 +168,7 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     // ------------------------------------------------------------
     if (data->features.hasMonthlyPeak) {
         offset += snprintf(payload + offset, sizeof(payload) - offset,
-                       "\"monthly_peak_kw\":%.3f,",
+                       "\"monthly_peak\":%.3f,",
                        data->monthly_peak_kw);
     }
 
