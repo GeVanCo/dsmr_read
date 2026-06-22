@@ -118,12 +118,6 @@ static void process_incoming_bytes(const uint8_t *data, size_t len)
                     // Validate 4 hex chars
                     bool hex_ok = true;
                     for (int j = 1; j <= 4; j++) {
-                        // char h = s_tlg_buf[pos + j];
-                        // if (!((h >= '0' && h <= '9') ||
-                        //       (h >= 'A' && h <= 'F'))) {
-                        //     hex_ok = false;
-                        //     break;
-                        // }
                         if (!isxdigit((unsigned char)s_tlg_buf[pos + j])) {
                             hex_ok = false;
                             break;
@@ -196,6 +190,9 @@ void dsmr_uart_init(void)
                                  DSMR_UART_RX_GPIO,
                                  UART_PIN_NO_CHANGE,
                                  UART_PIN_NO_CHANGE));
+
+    // IMPORTANT: Fluvius XT211 requires inverted RX
+    // ESP_ERROR_CHECK(uart_set_line_inverse(DSMR_UART_NUM, UART_SIGNAL_RXD_INV)); // <-- CRUCIAL !!!!!
 
     ESP_ERROR_CHECK(uart_driver_install(DSMR_UART_NUM,
                                         DSMR_RX_BUF_SIZE,

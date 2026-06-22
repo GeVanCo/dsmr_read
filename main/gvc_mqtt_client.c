@@ -19,7 +19,7 @@ static bool mqtt_connected = false;
 // 1024 bytes gives plenty of headroom for future expansion (extra OBIS values,
 // multi-phase data, timestamps, metadata, etc.) without risking truncation.
 // ---------------------------------------------------------------------------
-#define MQTT_PAYLOAD_BUFFER_SIZE 1024
+#define MQTT_PAYLOAD_BUFFER_SIZE 2048
 
 static void mqtt_event_handler(void *handler_args,
                                esp_event_base_t base,
@@ -58,7 +58,7 @@ void mqtt_client_init(void)
 {
     esp_mqtt_client_config_t cfg = {
         .broker.address.uri = MQTT_URI,
-        .network.disable_auto_reconnect = false,   // ensure auto-reconnect is enabled        
+        .network.disable_auto_reconnect = false,   // ensure auto-reconnect is enabled
     };
 
     client = esp_mqtt_client_init(&cfg);
@@ -93,119 +93,87 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     }
 
     char payload[MQTT_PAYLOAD_BUFFER_SIZE];
-    int offset = 0;
+    size_t offset = 0;
+    bool truncated = false;
 
-    offset += snprintf(payload + offset, sizeof(payload) - offset,
-                    "{"
-                    "\"import\":%.3f,"
-                    "\"export\":%.3f,",
-                    data->power_import,
-                    data->power_export);
+    // Helper macro/function to write safely to buffer
+    #define SAFE_APPEND(...) do { \
+        if (!truncated) { \
+            int ret = snprintf(payload + offset, sizeof(payload) - offset, __VA_ARGS__); \
+            if (offset + (size_t)ret >= sizeof(payload)) { \
+                truncated = true; \
+            } else { \
+                offset += (size_t)ret; \
+            } \
+        } \
+    } while(0)
 
-    // ------------------------------------------------------------
-    // Electricity: 1‑phase or 3‑phase
-    // ------------------------------------------------------------
+    // Start building JSON payload
+    SAFE_APPEND("{");
+
+    // 1. Electricity import/export is always present
+    SAFE_APPEND("\"import\":%.3f,", data->power_import);
+    SAFE_APPEND("\"export\":%.3f,", data->power_export);                    
+
+    // 2. Electricity: 1-phase or 3-phase
     if (data->features.isThreePhase) {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"V_L1\":%.1f,"
-                        "\"V_L2\":%.1f,"
-                        "\"V_L3\":%.1f,"
-                        "\"I_L1\":%.1f,"
-                        "\"I_L2\":%.1f,"
-                        "\"I_L3\":%.1f,",
-                        data->voltage_l1,
-                        data->voltage_l2,
-                        data->voltage_l3,
-                        data->current_l1,
-                        data->current_l2,
-                        data->current_l3);
+        SAFE_APPEND("\"V_L1\":%.1f,", data->voltage_l1);
+        SAFE_APPEND("\"V_L2\":%.1f,", data->voltage_l2);
+        SAFE_APPEND("\"V_L3\":%.1f,", data->voltage_l3);
+        SAFE_APPEND("\"I_L1\":%.1f,", data->current_l1);
+        SAFE_APPEND("\"I_L2\":%.1f,", data->current_l2);
+        SAFE_APPEND("\"I_L3\":%.1f,", data->current_l3);
     } else {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"V_L1\":%.1f,"
-                        "\"I_L1\":%.1f,",
-                        data->voltage_l1,
-                        data->current_l1);
+        SAFE_APPEND("\"V_L1\":%.1f,", data->voltage_l1);
+        SAFE_APPEND("\"I_L1\":%.1f,", data->current_l1);
     }
 
-    // ------------------------------------------------------------
-    // Gas
-    // ------------------------------------------------------------
+    // 3. Optional resources: gas, water, heat, solar, monthly peak
     if (data->features.hasGas) {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"gas_m3\":%.3f,",
-                        data->gas_m3);
+        SAFE_APPEND("\"gas_m3\":%.3f,", data->gas_m3);
     }
 
-    // ------------------------------------------------------------
-    // Water
-    // ------------------------------------------------------------
     if (data->features.hasWater) {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"water_m3\":%.3f,",
-                        data->water_m3);
+        SAFE_APPEND("\"water_m3\":%.3f,", data->water_m3);
     }
 
-    // ------------------------------------------------------------
-    // Heat
-    // ------------------------------------------------------------
     if (data->features.hasHeat) {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"heat_gj\":%.3f,",
-                        data->heat_gj);
+        SAFE_APPEND("\"heat\":%.3f,", data->heat_gj);
     }
 
-    // ------------------------------------------------------------
-    // Solar export
-    // ------------------------------------------------------------
     if (data->features.hasSolar) {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                        "\"solar\":%.3f,",
-                        data->power_export);
+        SAFE_APPEND("\"solar\":%.3f,", data->solar_kwh);
     }
 
-    // ------------------------------------------------------------
-    // Capacity tariff (monthly peak kW) - optional, may not be present in all meters
-    // ------------------------------------------------------------
     if (data->features.hasMonthlyPeak) {
-        offset += snprintf(payload + offset, sizeof(payload) - offset,
-                       "\"monthly_peak\":%.3f,",
-                       data->monthly_peak_kw);
+        SAFE_APPEND("\"monthly_peak\":%.3f,", data->monthly_peak_kw);
     }
 
     // ------------------------------------------------------------
     // Remove trailing comma and close JSON
     // ------------------------------------------------------------
-    if (payload[offset - 1] == ',') {
-        offset--;  // remove last comma
-    }
-
-    snprintf(payload + offset, sizeof(payload) - offset, "}");
-
-    // ----------------------------------------------------------------------
-    // Detect truncation (snprintf returns the number of chars that *would*
-    // have been written). If too large, publish an error JSON instead.
-    // ----------------------------------------------------------------------
-    if (offset >= sizeof(payload)) {
-        ESP_LOGE(TAG,
-                 "MQTT payload truncated! ([%d] bytes needed, max allowed: [%d])",
-                 offset, 
-                 MQTT_PAYLOAD_BUFFER_SIZE
-                );
-
-        // Build a small JSON error message
-        snprintf(
-            payload, 
-            sizeof(payload),
+    if (!truncated) {
+        if (offset > 1 && payload[offset - 1] == ',') {
+            offset--; // Remove trailing comma
+        }
+        payload[offset] = '\0'; // Provide correct termination
+        snprintf(payload + offset, sizeof(payload) - offset, "}");
+    } 
+    else {
+        // When buffer overloaded (truncated = true) we overwrite with a clean error message
+        ESP_LOGE(TAG, "MQTT payload too big!  Buffer overload...");
+        
+        snprintf(payload, sizeof(payload),
             "{"
             "\"error\":\"payload_too_large\","
-            "\"required\":%d,"
             "\"max_allowed\":%d"
             "}",
-            offset, 
             MQTT_PAYLOAD_BUFFER_SIZE
         );
     }
-    
+
+    #undef SAFE_APPEND // Clean up the macro
+
     int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC, payload, 0, 1, 0);
 
     if (msg_id >= 0) {

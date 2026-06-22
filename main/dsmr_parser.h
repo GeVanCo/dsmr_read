@@ -31,5 +31,5 @@ typedef struct {
     MeterFeatures features;
 } dsmr_data_t;
 
-dsmr_data_t dsmr_parse(const char *telegram);
+dsmr_data_t dsmr_parse(char *telegram);
 

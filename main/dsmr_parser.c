@@ -50,17 +50,20 @@ static float extract_float(const char *line)
     return atof(buf);
 }
 
-dsmr_data_t dsmr_parse(const char *telegram)
+dsmr_data_t dsmr_parse(char *telegram)
 {
     dsmr_data_t data = {0};
 
+    if (!telegram) {
+        ESP_LOGE(TAG, "Telegram pointer is NULL");
+        return data;
+    }
+    
+    // Detect features in telegram prior to modifications by strtok
     data.features = detect_obis_features(telegram);
 
-    char *copy = strdup(telegram);
-    if (!copy)
-        return data;
-
-    char *line = strtok(copy, "\r\n");
+    char *line = strtok(telegram, "\r\n");
+    
     while (line) {
 
         // ---------------------------------------------------------------------------
@@ -87,16 +90,6 @@ dsmr_data_t dsmr_parse(const char *telegram)
         // 1-0:2.8.0 = total export kWh
         else if (strstr(line, "1-0:2.8.0")) {
             data.power_export = extract_float(line);
-        }
-
-        // 1-0:32.7.0 = voltage L1
-        else if (strstr(line, "1-0:32.7.0")) {
-            data.voltage_l1 = extract_float(line);
-        }
-
-        // 1-0:31.7.0 = current L1
-        else if (strstr(line, "1-0:31.7.0")) {
-            data.current_l1 = extract_float(line);
         }
         
         // 1-0:32.7.0 = voltage L1
@@ -200,7 +193,6 @@ dsmr_data_t dsmr_parse(const char *telegram)
         line = strtok(NULL, "\r\n");
     }
 
-    free(copy);
     ESP_LOGI(TAG, "Parsed DSMR: import=%.3f, export=%.3f, U=%.1fV, I=%.1fA",
              data.power_import, data.power_export,
              data.voltage_l1, data.current_l1);
