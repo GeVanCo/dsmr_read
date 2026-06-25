@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <ctype.h> // isxdigit()
 
-static const char *TAG = "gvc_dsmr_uart";
+static const char *TAG = "#_uart";
 
 // UART1 on GPIO4 (RX), TX unused
 #define DSMR_UART_NUM      UART_NUM_1

@@ -7,7 +7,7 @@
 
 #include <stdio.h>
 
-static const char *TAG = "gvc_mqtt_client";
+static const char *TAG = "#_client";
 static esp_mqtt_client_handle_t client = NULL;
 static bool mqtt_connected = false;
 
@@ -54,7 +54,7 @@ static void mqtt_event_handler(void *handler_args,
     }
 }
 
-void mqtt_client_init(void)
+void mqtt_client_init(void) 
 {
     esp_mqtt_client_config_t cfg = {
         .broker.address.uri = MQTT_URI,
@@ -78,7 +78,7 @@ void mqtt_client_init(void)
     ESP_LOGI(TAG, "MQTT client started");
 }
 
-void mqtt_publish_dsmr(const dsmr_data_t *data)
+void mqtt_publish_dsmr(const dsmr_data_t *data) 
 {
     // Layer 1: MQTT client exists
     if (!client) {
@@ -112,8 +112,8 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
     SAFE_APPEND("{");
 
     // 1. Electricity import/export is always present
-    SAFE_APPEND("\"import\":%.3f,", data->power_import);
-    SAFE_APPEND("\"export\":%.3f,", data->power_export);                    
+  SAFE_APPEND("\"I\":%.3f,", data->power_import);
+  SAFE_APPEND("\"E\":%.3f,", data->power_export);
 
     // 2. Electricity: 1-phase or 3-phase
     if (data->features.isThreePhase) {
@@ -130,23 +130,23 @@ void mqtt_publish_dsmr(const dsmr_data_t *data)
 
     // 3. Optional resources: gas, water, heat, solar, monthly peak
     if (data->features.hasGas) {
-        SAFE_APPEND("\"gas_m3\":%.3f,", data->gas_m3);
+    SAFE_APPEND("\"GAS\":%.3f,", data->gas_m3);
     }
 
     if (data->features.hasWater) {
-        SAFE_APPEND("\"water_m3\":%.3f,", data->water_m3);
+    SAFE_APPEND("\"H2O\":%.3f,", data->water_m3);
     }
 
     if (data->features.hasHeat) {
-        SAFE_APPEND("\"heat\":%.3f,", data->heat_gj);
+    SAFE_APPEND("\"HEAT\":%.3f,", data->heat_gj);
     }
 
     if (data->features.hasSolar) {
-        SAFE_APPEND("\"solar\":%.3f,", data->solar_kwh);
+    SAFE_APPEND("\"Sol\":%.3f,", data->solar_kwh);
     }
 
     if (data->features.hasMonthlyPeak) {
-        SAFE_APPEND("\"monthly_peak\":%.3f,", data->monthly_peak_kw);
+    SAFE_APPEND("\"M_PEAK\":%.3f,", data->monthly_peak_kw);
     }
 
     // ------------------------------------------------------------

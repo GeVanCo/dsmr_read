@@ -8,7 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "gvc_dsmr_task";
+static const char *TAG = "#_task";
 
 #define DSMR_TASK_STACK 4096
 #define DSMR_TASK_PRIO  5

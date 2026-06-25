@@ -7,7 +7,7 @@
 #include "esp_netif.h"
 #include "system_status.h"
 
-static const char *TAG = "gvc_wifi_manager";
+static const char *TAG = "#_manager";
 
 #define WIFI_SSID      "SisyPhus"
 #define WIFI_PASS      "Vision#Tpv"

@@ -5,7 +5,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
-static const char *TAG = "gvc_led_status";
+static const char *TAG = "#_status";
 
 #define LED_GPIO 8   // adjust if needed
 

@@ -7,7 +7,7 @@
 #include "system_status.h"
 #include "esp_log.h"
 
-static const char *TAG = "gvc_app";
+static const char *TAG = "#_app";
 
 void app_main(void)
 {
