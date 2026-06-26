@@ -3,4 +3,4 @@
 #include "dsmr_parser.h"
 
 void mqtt_client_init(void);
-void mqtt_publish_dsmr(const dsmr_data_t *data);
+void mqtt_publish_dsmr(const char* json);

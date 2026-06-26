@@ -1,35 +1,77 @@
-#pragma once
+#ifndef DSMR_PARSER_H
+#define DSMR_PARSER_H
 
-typedef struct {
-    bool isThreePhase;
-    bool hasGas;
-    bool hasWater;
-    bool hasHeat;
-    bool hasSolar;
-    bool hasMonthlyPeak; // Indicates if the meter provides monthly peak kW data
-} MeterFeatures;
+#include <stdbool.h>
+#include <stddef.h>
 
-typedef struct {
-    float power_import;    // 1-0:1.8.0
-    float power_export;    // 1-0:2.8.0 
+//
+// OBIS identifiers
+//
+typedef enum
+{
+    OBIS_NONE = 0,
+    OBIS_1_8_0,
+    OBIS_2_8_0,
+    OBIS_32_7_0,
+    OBIS_52_7_0,
+    OBIS_72_7_0,
+    OBIS_31_7_0,
+    OBIS_51_7_0,
+    OBIS_71_7_0,
+    OBIS_1_6_0,
+    OBIS_24_2_1_GAS,
+    OBIS_24_2_3_WATER,
+    OBIS_24_2_4_HEAT,
+    OBIS_2_7_0_SOLAR,
+    OBIS_1_0_0_TIMESTAMP,
+    OBIS_96_14_0_TARIFF,
+    OBIS_96_3_10_BREAKER
+} obis_id_t;
 
-    float voltage_l1;      // 1-0:32.7.0
-    float voltage_l2;      // 1-0:52.7.0
-    float voltage_l3;      // 1-0:72.7.0
+//
+// Optional data struct (keep if you still want it)
+//
+typedef struct
+{
+    float power_import;
+    float power_export;
 
-    float current_l1;      // 1-0:31.7.0
-    float current_l2;      // 1-0:51.7.0
-    float current_l3;      // 1-0:71.7.0
+    float voltage_l1;
+    float voltage_l2;
+    float voltage_l3;
 
-    float gas_m3;          // 0-1:24.2.1
-    float water_m3;        // 0-2:24.2.3   
-    float heat_gj;         // 0-3:24.2.4
-    float solar_kwh;       // 1-0:2.7.0
+    float current_l1;
+    float current_l2;
+    float current_l3;
 
-    float monthly_peak_kw; // 1-0:1.6.0 (optional, may not be present in all meters)
+    float monthly_peak_kw;
 
-    MeterFeatures features;
-} dsmr_data_t;
+    float gas_m3;
+    float water_m3;
+    float heat_gj;
+    float solar_kwh;
 
+    char  timestamp[16];
+}
+dsmr_data_t;
+
+//
+// OBIS descriptor: enum ↔ prefix ↔ JSON key
+//
+typedef struct
+{
+    obis_id_t    id;
+    const char  *prefix;    // line prefix to match
+    const char  *json_key;  // JSON key used in json_p1_set_obis()
+}
+obis_descriptor_t;
+
+extern const obis_descriptor_t dsmr_obis_table[];
+extern const size_t            dsmr_obis_table_count;
+
+//
+// Main parser
+//
 dsmr_data_t dsmr_parse(char *telegram);
 
+#endif // DSMR_PARSER_H

@@ -3,6 +3,7 @@
 #include "dsmr_uart.h"
 #include "dsmr_parser.h"
 #include "gvc_mqtt_client.h"
+#include "json_p1.h"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -18,18 +19,36 @@ static void dsmr_task(void *arg)
     ESP_LOGI(TAG, "DSMR task started");
 
     QueueHandle_t q = dsmr_uart_get_queue();
-    if (!q) {
+    if (!q)
+    {
         ESP_LOGE(TAG, "DSMR telegram queue not initialized");
         vTaskDelete(NULL);
     }
 
-    while (1) {
+    while (1)
+    {
         char *telegram = NULL;
 
-        if (xQueueReceive(q, &telegram, portMAX_DELAY) == pdTRUE) {
-            if (telegram) {
-                dsmr_data_t data = dsmr_parse(telegram);
-                mqtt_publish_dsmr(&data);
+        if (xQueueReceive(q, &telegram, portMAX_DELAY) == pdTRUE)
+        {
+            if (telegram)
+            {
+                // Reset JSON state per telegram
+                json_p1_reset();
+
+                // Parse telegram → fills OBIS table via json_p1_set_obis()
+                (void)dsmr_parse(telegram);
+
+                // Build JSON
+                bool is_full = false;
+                char *json = json_p1_build(&is_full);
+
+                if (json)
+                {
+                    mqtt_publish_dsmr(json);
+                    free(json);
+                }
+
                 free(telegram);
             }
         }
@@ -45,4 +64,3 @@ void dsmr_task_start(void)
                 DSMR_TASK_PRIO,
                 NULL);
 }
-

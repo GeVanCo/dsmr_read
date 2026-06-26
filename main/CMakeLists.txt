@@ -9,5 +9,6 @@ idf_component_register(
         "dsmr_task.c"
         "led_status.c"
         "system_status.c"
+        "json_p1.c"
     INCLUDE_DIRS "."
     REQUIRES esp_wifi esp_netif esp_event esp_driver_uart esp_driver_gpio nvs_flash)
