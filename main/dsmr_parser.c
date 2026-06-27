@@ -40,6 +40,18 @@ const obis_descriptor_t dsmr_obis_table[] =
 const size_t dsmr_obis_table_count =
     sizeof(dsmr_obis_table) / sizeof(dsmr_obis_table[0]);
 
+    static const obis_descriptor_t *get_obis_desc(obis_id_t id)
+{
+    for (size_t i = 0; i < dsmr_obis_table_count; i++)
+    {
+        if (dsmr_obis_table[i].id == id)
+        {
+            return &dsmr_obis_table[i];
+        }
+    }
+    return NULL;
+}
+
 //
 // Identify OBIS code by prefix match
 //
@@ -137,7 +149,11 @@ static void extract_timestamp(const char *line)
     strncpy(ts, start + 1, 13);
     ts[13] = '\0';
 
-    json_p1_set_obis("1.0.0", ts);
+    const obis_descriptor_t *desc = get_obis_desc(OBIS_1_0_0_TIMESTAMP);
+    if (desc)
+    {
+        json_p1_set_obis(desc->json_key, ts);
+    }
 }
 
 //
@@ -169,7 +185,11 @@ dsmr_data_t dsmr_parse(char *telegram)
                 char buf[16];
                 snprintf(buf, sizeof(buf), "%.3f", v);
 
-                json_p1_set_obis(dsmr_obis_table[id].json_key, buf);
+                const obis_descriptor_t *desc = get_obis_desc(id);
+                if (desc)
+                {
+                    json_p1_set_obis(desc->json_key, buf);
+                }               
                 break;
             }
 
@@ -185,7 +205,11 @@ dsmr_data_t dsmr_parse(char *telegram)
                 char buf[16];
                 snprintf(buf, sizeof(buf), "%.1f", v);
 
-                json_p1_set_obis(dsmr_obis_table[id].json_key, buf);
+                const obis_descriptor_t *desc = get_obis_desc(id);
+                if (desc)
+                {
+                    json_p1_set_obis(desc->json_key, buf);
+                }               
                 break;
             }
 
@@ -196,7 +220,11 @@ dsmr_data_t dsmr_parse(char *telegram)
                 char buf[16];
                 snprintf(buf, sizeof(buf), "%.3f", v);
 
-                json_p1_set_obis(dsmr_obis_table[id].json_key, buf);
+                const obis_descriptor_t *desc = get_obis_desc(id);
+                if (desc)
+                {
+                    json_p1_set_obis(desc->json_key, buf);
+                }               
                 break;
             }
 
@@ -210,7 +238,11 @@ dsmr_data_t dsmr_parse(char *telegram)
                 char buf[16];
                 snprintf(buf, sizeof(buf), "%.3f", v);
 
-                json_p1_set_obis(dsmr_obis_table[id].json_key, buf);
+                const obis_descriptor_t *desc = get_obis_desc(id);
+                if (desc)
+                {
+                    json_p1_set_obis(desc->json_key, buf);
+                }               
                 break;
             }
 
@@ -228,7 +260,11 @@ dsmr_data_t dsmr_parse(char *telegram)
                     char buf[8];
                     strncpy(buf, start + 1, 4);
                     buf[4] = '\0';
-                    json_p1_set_obis(dsmr_obis_table[id].json_key, buf);
+                    const obis_descriptor_t *desc = get_obis_desc(id);
+                    if (desc)
+                    {
+                        json_p1_set_obis(desc->json_key, buf);
+                    }               
                 }
                 break;
             }
@@ -241,7 +277,11 @@ dsmr_data_t dsmr_parse(char *telegram)
                     char buf[4];
                     strncpy(buf, start + 1, 1);
                     buf[1] = '\0';
-                    json_p1_set_obis(dsmr_obis_table[id].json_key, buf);
+                    const obis_descriptor_t *desc = get_obis_desc(id);
+                    if (desc)
+                    {
+                        json_p1_set_obis(desc->json_key, buf);
+                    }               
                 }
                 break;
             }
