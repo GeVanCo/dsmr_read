@@ -35,12 +35,82 @@ const obis_descriptor_t dsmr_obis_table[] =
     { OBIS_1_0_0_TIMESTAMP, "0-0:1.0.0",  "1.0.0" },
     { OBIS_96_14_0_TARIFF,  "0-0:96.14.0","96.14.0" },
     { OBIS_96_3_10_BREAKER, "0-0:96.3.10","96.3.10" },
+
+    { OBIS_98_1_0_HISTORY, "0-0:98.1.0", "1.6.0_hist" },
 };
 
 const size_t dsmr_obis_table_count =
     sizeof(dsmr_obis_table) / sizeof(dsmr_obis_table[0]);
 
-    static const obis_descriptor_t *get_obis_desc(obis_id_t id)
+/////////////////////////////////////////////////////////////////////////////////////    
+/////////////////////////////////////////////////////////////////////////////////////    
+/////////////////////////////////////////////////////////////////////////////////////    
+
+static int extract_history_count(const char *line)
+{
+    const char *s = strchr(line, '(');
+    const char *e = strchr(line, ')');
+
+    if (!s || !e || e <= s + 1)
+    {
+        return 0;
+    }
+
+    char buf[8];
+    size_t len = e - (s + 1);
+    if (len > 7) len = 7;
+
+    memcpy(buf, s + 1, len);
+    buf[len] = '\0';
+
+    return atoi(buf);
+}
+
+static void parse_history_entry(const char *line)
+{
+    const char *p = line;
+
+    // Start timestamp
+    const char *s1 = strchr(p, '(');
+    if (!s1) return;
+    const char *e1 = strchr(s1, ')');
+    if (!e1) return;
+
+    char start_ts[16];
+    size_t len1 = e1 - (s1 + 1);
+    if (len1 > 13) len1 = 13;
+    memcpy(start_ts, s1 + 1, len1);
+    start_ts[len1] = '\0';
+
+    // Peak timestamp
+    const char *s2 = strchr(e1 + 1, '(');
+    if (!s2) return;
+    const char *e2 = strchr(s2, ')');
+    if (!e2) return;
+
+    char peak_ts[16];
+    size_t len2 = e2 - (s2 + 1);
+    if (len2 > 13) len2 = 13;
+    memcpy(peak_ts, s2 + 1, len2);
+    peak_ts[len2] = '\0';
+
+    // Peak value
+    const char *s3 = strchr(e2 + 1, '(');
+    if (!s3) return;
+    const char *e3 = strchr(s3, '*');
+    if (!e3) return;
+
+    char value[16];
+    size_t len3 = e3 - (s3 + 1);
+    if (len3 > 15) len3 = 15;
+    memcpy(value, s3 + 1, len3);
+    value[len3] = '\0';
+
+    // Store in JSON
+    json_p1_add_peak_event(peak_ts, value);
+}
+
+static const obis_descriptor_t *get_obis_desc(obis_id_t id)
 {
     for (size_t i = 0; i < dsmr_obis_table_count; i++)
     {
@@ -283,6 +353,26 @@ dsmr_data_t dsmr_parse(char *telegram)
                         json_p1_set_obis(desc->json_key, buf);
                     }               
                 }
+                break;
+            }
+            
+            case OBIS_98_1_0_HISTORY:
+            {
+                // Read count from "(13)"
+                int count = extract_history_count(line);
+
+                // Parse exactly <count> history entries
+                for (int i = 0; i < count; i++)
+                {
+                    char *entry = strtok(NULL, "\r\n");
+                    if (!entry || entry[0] != '(')
+                    {
+                        break; // malformed or early end
+                    }
+
+                    parse_history_entry(entry);
+                }
+
                 break;
             }
 

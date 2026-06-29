@@ -25,7 +25,8 @@ typedef enum
     OBIS_2_7_0_SOLAR,
     OBIS_1_0_0_TIMESTAMP,
     OBIS_96_14_0_TARIFF,
-    OBIS_96_3_10_BREAKER
+    OBIS_96_3_10_BREAKER,
+    OBIS_98_1_0_HISTORY,
 } obis_id_t;
 
 //
